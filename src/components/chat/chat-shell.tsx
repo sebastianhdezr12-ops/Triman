@@ -64,6 +64,18 @@ export function ChatShell({
     };
     setMessages((prev) => [...prev, optimisticMessage]);
 
+    const assistantId = `streaming-${Date.now()}`;
+    const assistantMessage: Message = {
+      id: assistantId,
+      conversation_id: "",
+      user_id: profile.id,
+      coach_id: coachId,
+      role: "assistant",
+      content: "",
+      image_url: null,
+      created_at: new Date().toISOString(),
+    };
+
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
@@ -71,20 +83,27 @@ export function ChatShell({
         body: JSON.stringify({ coachId, content }),
       });
 
-      if (!res.ok) {
+      if (!res.ok || !res.body) {
         throw new Error("Falló el envío.");
       }
 
-      const data: { userMessage: Message; assistantMessage: Message | null } = await res.json();
+      setMessages((prev) => [...prev, assistantMessage]);
 
-      setMessages((prev) => {
-        const withoutOptimistic = prev.filter((m) => m.id !== optimisticId);
-        const next = [...withoutOptimistic, data.userMessage];
-        if (data.assistantMessage) next.push(data.assistantMessage);
-        return next;
-      });
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId ? { ...m, content: m.content + chunk } : m
+          )
+        );
+      }
     } catch {
-      setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
+      setMessages((prev) => prev.filter((m) => m.id !== optimisticId && m.id !== assistantId));
       setInput(content);
       setError("No se pudo enviar el mensaje. Intenta de nuevo.");
     } finally {
