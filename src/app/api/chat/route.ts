@@ -4,6 +4,7 @@ import { isCoachId } from "@/lib/coaches";
 import { anthropic, CHAT_MODEL } from "@/lib/anthropic";
 import { buildSystemPrompt, buildUserContextBlock } from "@/lib/coach-prompts";
 import { COACH_TOOLS, executeCoachTool } from "@/lib/coach-tools";
+import { signChatPhotoUrl } from "@/lib/chat-photos";
 import type { CoachId, Message } from "@/lib/supabase/database.types";
 
 type Supabase = Awaited<ReturnType<typeof createClient>>;
@@ -41,11 +42,16 @@ function toMessageContent(content: string, imageUrl: string | null): Anthropic.M
   ];
 }
 
-function historyToMessages(history: Message[]): Anthropic.MessageParam[] {
-  return history.map((m) => ({
-    role: m.role,
-    content: toMessageContent(m.content, m.image_url),
-  }));
+async function historyToMessages(
+  supabase: Supabase,
+  history: Message[]
+): Promise<Anthropic.MessageParam[]> {
+  return Promise.all(
+    history.map(async (m) => {
+      const imageUrl = m.image_url ? await signChatPhotoUrl(supabase, m.image_url, 600) : null;
+      return { role: m.role, content: toMessageContent(m.content, imageUrl) };
+    })
+  );
 }
 
 async function loadContext(supabase: Supabase, userId: string, coachId: CoachId) {
@@ -165,9 +171,9 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
   const coachId = String(body?.coachId ?? "");
   const content = String(body?.content ?? "").trim();
-  const imageUrl = body?.imageUrl ? String(body.imageUrl) : null;
+  const imagePath = body?.imagePath ? String(body.imagePath) : null;
 
-  if (!isCoachId(coachId) || (!content && !imageUrl)) {
+  if (!isCoachId(coachId) || (!content && !imagePath)) {
     return new Response("Solicitud inválida.", { status: 400 });
   }
 
@@ -181,7 +187,7 @@ export async function POST(request: Request) {
       coach_id: coachId,
       role: "user",
       content,
-      image_url: imageUrl,
+      image_url: imagePath,
     })
     .select("*")
     .single();
@@ -205,9 +211,11 @@ export async function POST(request: Request) {
   const systemPrompt = buildSystemPrompt(coachId);
   const contextBlock = buildUserContextBlock(context);
 
+  const currentImageUrl = imagePath ? await signChatPhotoUrl(supabase, imagePath, 600) : null;
+
   const initialMessages: Anthropic.MessageParam[] = [
-    ...historyToMessages(priorHistory),
-    { role: "user", content: toMessageContent(content, imageUrl) },
+    ...(await historyToMessages(supabase, priorHistory)),
+    { role: "user", content: toMessageContent(content, currentImageUrl) },
   ];
 
   const encoder = new TextEncoder();

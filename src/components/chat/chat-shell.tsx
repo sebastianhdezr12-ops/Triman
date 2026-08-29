@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { logoutAction } from "@/app/(auth)/actions";
+import { createClient } from "@/lib/supabase/client";
 import { COACHES } from "@/lib/coaches";
 import { CoachSwitcher } from "./coach-switcher";
 import { SidePanel } from "./side-panel";
@@ -40,20 +41,60 @@ export function ChatShell({
   const [panelOpen, setPanelOpen] = useState(false);
   const [checkinOpen, setCheckinOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pendingImage, setPendingImage] = useState<{
+    path: string;
+    previewUrl: string;
+  } | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      setError("Solo se permiten imágenes.");
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      setError("La imagen es muy pesada (máx. 8MB).");
+      return;
+    }
+
+    setError(null);
+    setUploadingImage(true);
+    try {
+      const supabase = createClient();
+      const path = `${profile.id}/${coachId}/${crypto.randomUUID()}-${file.name}`;
+      const { error: uploadError } = await supabase.storage
+        .from("chat-photos")
+        .upload(path, file);
+
+      if (uploadError) throw uploadError;
+      setPendingImage({ path, previewUrl: URL.createObjectURL(file) });
+    } catch {
+      setError("No se pudo subir la imagen.");
+    } finally {
+      setUploadingImage(false);
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const content = input.trim();
-    if (!content || sending) return;
+    if ((!content && !pendingImage) || sending) return;
 
     setError(null);
     setInput("");
     setSending(true);
+    const imageToSend = pendingImage;
+    setPendingImage(null);
 
     const optimisticId = `optimistic-${Date.now()}`;
     const optimisticMessage: Message = {
@@ -63,7 +104,7 @@ export function ChatShell({
       coach_id: coachId,
       role: "user",
       content,
-      image_url: null,
+      image_url: imageToSend?.previewUrl ?? null,
       created_at: new Date().toISOString(),
     };
     setMessages((prev) => [...prev, optimisticMessage]);
@@ -84,7 +125,7 @@ export function ChatShell({
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ coachId, content }),
+        body: JSON.stringify({ coachId, content, imagePath: imageToSend?.path }),
       });
 
       if (!res.ok || !res.body) {
@@ -109,6 +150,7 @@ export function ChatShell({
     } catch {
       setMessages((prev) => prev.filter((m) => m.id !== optimisticId && m.id !== assistantId));
       setInput(content);
+      if (imageToSend) setPendingImage(imageToSend);
       setError("No se pudo enviar el mensaje. Intenta de nuevo.");
     } finally {
       setSending(false);
@@ -188,7 +230,43 @@ export function ChatShell({
             onSubmit={handleSubmit}
             className="border-t border-black/5 px-4 py-3 dark:border-white/10"
           >
+            {pendingImage && (
+              <div className="mx-auto mb-2 flex max-w-2xl items-center gap-2">
+                <div className="relative">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={pendingImage.previewUrl}
+                    alt="Foto a enviar"
+                    className="h-14 w-14 rounded-lg object-cover"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setPendingImage(null)}
+                    className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-zinc-900 text-xs text-white"
+                    aria-label="Quitar imagen"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="mx-auto flex max-w-2xl items-center gap-2">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleFileSelect}
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadingImage || sending}
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-black/10 text-zinc-500 transition-colors hover:text-zinc-900 disabled:opacity-50 dark:border-white/15 dark:text-zinc-400 dark:hover:text-white"
+                aria-label="Adjuntar foto"
+              >
+                {uploadingImage ? "…" : "📷"}
+              </button>
               <input
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
@@ -197,7 +275,7 @@ export function ChatShell({
               />
               <button
                 type="submit"
-                disabled={sending || !input.trim()}
+                disabled={sending || (!input.trim() && !pendingImage)}
                 className="h-11 shrink-0 rounded-full bg-red-600 px-5 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50"
               >
                 Enviar

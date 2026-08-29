@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireProfile } from "@/lib/auth";
 import { isCoachId } from "@/lib/coaches";
+import { withSignedImageUrls } from "@/lib/chat-photos";
 import { ChatShell } from "@/components/chat/chat-shell";
 
 export default async function ChatCoachPage({ params }: PageProps<"/chat/[coach]">) {
@@ -52,12 +53,14 @@ export default async function ChatCoachPage({ params }: PageProps<"/chat/[coach]
     .limit(1)
     .maybeSingle();
 
+  const messagesWithSignedImages = await withSignedImageUrls(supabase, messages ?? []);
+
   return (
     <ChatShell
       key={coach}
       coachId={coach}
       profile={profile}
-      initialMessages={messages ?? []}
+      initialMessages={messagesWithSignedImages}
       activePlan={activePlan ?? null}
       activePlanSessions={activePlanSessions ?? []}
       latestCheckin={latestCheckin ?? null}
