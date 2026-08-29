@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "verify:supabase": "node scripts/verify-supabase.mjs",
-    "verify:anthropic": "node scripts/test-anthropic.mjs"
+    "verify:anthropic": "node scripts/test-anthropic.mjs",
+    "seed:demo": "node scripts/seed-demo.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",
