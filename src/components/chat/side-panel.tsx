@@ -15,10 +15,12 @@ export function SidePanel({
   activePlan,
   activePlanSessions,
   latestCheckin,
+  onOpenCheckin,
 }: {
   activePlan: TrainingPlan | null;
   activePlanSessions: TrainingSession[];
   latestCheckin: ReadinessCheckin | null;
+  onOpenCheckin: () => void;
 }) {
   return (
     <div className="flex flex-col gap-4 p-4">
@@ -47,7 +49,16 @@ export function SidePanel({
       </div>
 
       <div className="rounded-2xl border border-black/10 p-4 dark:border-white/10">
-        <h3 className="text-sm font-semibold text-zinc-950 dark:text-white">Último check-in</h3>
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-zinc-950 dark:text-white">Último check-in</h3>
+          <button
+            type="button"
+            onClick={onOpenCheckin}
+            className="text-xs font-medium text-red-600 hover:text-red-700 dark:text-red-400"
+          >
+            {latestCheckin ? "Actualizar" : "Registrar"}
+          </button>
+        </div>
         {latestCheckin ? (
           <div className="mt-2 grid grid-cols-2 gap-2">
             {CHECKIN_LABELS.map(({ key, label }) => (

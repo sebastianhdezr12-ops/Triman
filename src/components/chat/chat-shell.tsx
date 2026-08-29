@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { logoutAction } from "@/app/(auth)/actions";
 import { COACHES } from "@/lib/coaches";
 import { CoachSwitcher } from "./coach-switcher";
 import { SidePanel } from "./side-panel";
 import { MessageBubble } from "./message-bubble";
+import { CheckinModal } from "./checkin-modal";
 import type {
   CoachId,
   Message,
@@ -31,10 +33,12 @@ export function ChatShell({
   latestCheckin: ReadinessCheckin | null;
 }) {
   const coach = COACHES[coachId];
+  const router = useRouter();
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [checkinOpen, setCheckinOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -113,6 +117,11 @@ export function ChatShell({
 
   async function handleLogout() {
     await logoutAction();
+  }
+
+  function handleCheckinSaved() {
+    setCheckinOpen(false);
+    router.refresh();
   }
 
   return (
@@ -207,6 +216,7 @@ export function ChatShell({
             activePlan={activePlan}
             activePlanSessions={activePlanSessions}
             latestCheckin={latestCheckin}
+            onOpenCheckin={() => setCheckinOpen(true)}
           />
         </aside>
 
@@ -222,11 +232,16 @@ export function ChatShell({
                 activePlan={activePlan}
                 activePlanSessions={activePlanSessions}
                 latestCheckin={latestCheckin}
+                onOpenCheckin={() => setCheckinOpen(true)}
               />
             </aside>
           </div>
         )}
       </div>
+
+      {checkinOpen && (
+        <CheckinModal onClose={() => setCheckinOpen(false)} onSaved={handleCheckinSaved} />
+      )}
     </div>
   );
 }
