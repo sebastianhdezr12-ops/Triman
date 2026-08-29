@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { logoutAction } from "@/app/(auth)/actions";
 import { createClient } from "@/lib/supabase/client";
 import { COACHES } from "@/lib/coaches";
@@ -14,6 +14,7 @@ import type {
   Message,
   Profile,
   ReadinessCheckin,
+  StravaActivity,
   TrainingPlan,
   TrainingSession,
 } from "@/lib/supabase/database.types";
@@ -25,6 +26,8 @@ export function ChatShell({
   activePlan,
   activePlanSessions,
   latestCheckin,
+  stravaConnected,
+  recentActivities,
 }: {
   coachId: CoachId;
   profile: Profile;
@@ -32,9 +35,21 @@ export function ChatShell({
   activePlan: TrainingPlan | null;
   activePlanSessions: TrainingSession[];
   latestCheckin: ReadinessCheckin | null;
+  stravaConnected: boolean;
+  recentActivities: StravaActivity[];
 }) {
   const coach = COACHES[coachId];
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const [banner, setBanner] = useState<string | null>(() => {
+    if (searchParams.get("strava_connected")) {
+      return "Strava conectado. Ya puedes pedirle a tu coach que revise tus actividades.";
+    }
+    if (searchParams.get("strava_error")) {
+      return "No se pudo conectar con Strava. Intenta de nuevo.";
+    }
+    return null;
+  });
   const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
@@ -46,12 +61,20 @@ export function ChatShell({
     previewUrl: string;
   } | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [syncingStrava, setSyncingStrava] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  useEffect(() => {
+    if (searchParams.get("strava_connected") || searchParams.get("strava_error")) {
+      router.replace(`/chat/${coachId}`);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -166,6 +189,20 @@ export function ChatShell({
     router.refresh();
   }
 
+  async function handleSyncStrava() {
+    setSyncingStrava(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/strava/sync", { method: "POST" });
+      if (!res.ok) throw new Error("Falló la sincronización.");
+      router.refresh();
+    } catch {
+      setError("No se pudo sincronizar con Strava.");
+    } finally {
+      setSyncingStrava(false);
+    }
+  }
+
   return (
     <div className="flex h-dvh flex-col bg-white dark:bg-black">
       <header className="flex items-center justify-between gap-3 border-b border-black/5 px-4 py-3 dark:border-white/10">
@@ -209,6 +246,20 @@ export function ChatShell({
       <div className="block border-b border-black/5 px-4 py-2 dark:border-white/10 sm:hidden">
         <CoachSwitcher activeCoach={coachId} />
       </div>
+
+      {banner && (
+        <div className="flex items-center justify-between gap-3 bg-red-50 px-4 py-2 text-sm text-red-800 dark:bg-red-500/10 dark:text-red-300">
+          <span>{banner}</span>
+          <button
+            type="button"
+            onClick={() => setBanner(null)}
+            className="shrink-0 text-red-800/60 hover:text-red-800 dark:text-red-300/60 dark:hover:text-red-300"
+            aria-label="Cerrar aviso"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       <div className="flex min-h-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col">
@@ -291,10 +342,15 @@ export function ChatShell({
 
         <aside className="hidden w-80 shrink-0 overflow-y-auto border-l border-black/5 dark:border-white/10 lg:block">
           <SidePanel
+            coachId={coachId}
             activePlan={activePlan}
             activePlanSessions={activePlanSessions}
             latestCheckin={latestCheckin}
             onOpenCheckin={() => setCheckinOpen(true)}
+            stravaConnected={stravaConnected}
+            recentActivities={recentActivities}
+            onSyncStrava={handleSyncStrava}
+            syncingStrava={syncingStrava}
           />
         </aside>
 
@@ -307,10 +363,15 @@ export function ChatShell({
             />
             <aside className="w-80 max-w-[85vw] overflow-y-auto bg-white dark:bg-black">
               <SidePanel
+                coachId={coachId}
                 activePlan={activePlan}
                 activePlanSessions={activePlanSessions}
                 latestCheckin={latestCheckin}
                 onOpenCheckin={() => setCheckinOpen(true)}
+                stravaConnected={stravaConnected}
+                recentActivities={recentActivities}
+                onSyncStrava={handleSyncStrava}
+                syncingStrava={syncingStrava}
               />
             </aside>
           </div>

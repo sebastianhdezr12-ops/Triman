@@ -53,6 +53,19 @@ export default async function ChatCoachPage({ params }: PageProps<"/chat/[coach]
     .limit(1)
     .maybeSingle();
 
+  const { data: stravaConnection } = await supabase
+    .from("strava_connections")
+    .select("user_id")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  const { data: recentActivities } = await supabase
+    .from("strava_activities")
+    .select("*")
+    .eq("user_id", userId)
+    .order("start_date", { ascending: false })
+    .limit(5);
+
   const messagesWithSignedImages = await withSignedImageUrls(supabase, messages ?? []);
 
   return (
@@ -64,6 +77,8 @@ export default async function ChatCoachPage({ params }: PageProps<"/chat/[coach]
       activePlan={activePlan ?? null}
       activePlanSessions={activePlanSessions ?? []}
       latestCheckin={latestCheckin ?? null}
+      stravaConnected={Boolean(stravaConnection)}
+      recentActivities={recentActivities ?? []}
     />
   );
 }
